@@ -1,0 +1,14 @@
+# Visual Studio/Build artifacts
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.log
+
+# VS Code
+.vscode/
+
+# Others
+*.tmp
+*.bak
