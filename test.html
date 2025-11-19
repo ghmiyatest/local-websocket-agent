@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Local WS Agent Test</title>
+<h1>LocalFileAgent テスト</h1>
+<pre id="log"></pre>
+<script>
+  // エージェントに合わせて設定
+  const WS_URL = "ws://10.160.28.4/:8787/ws?token=YOUR_SECRET"; // run-agent の -Token と一致
+  const USE_SJIS = true;  // 既存互換で SJIS で書き込む
+
+  const log = (m) => { document.getElementById('log').textContent += m + "\n"; console.log(m); };
+  let ws;
+
+  function send(obj){
+    const s = JSON.stringify(obj);
+    log(">>> " + s);
+    ws.send(s);
+  }
+
+  function connect(){
+    ws = new WebSocket(WS_URL);
+    ws.onopen = () => {
+      log("[open] " + WS_URL);
+
+      // ① *.004 削除（現行の gKillLinkFile 相当）
+      send({ action:"delete", path:"*.004", wildcard:true });
+
+      // ② リンクファイル作成（SetLinkFileData 相当）
+      //    BaseDir=C:\Adseven の直下に Jxb.004 を作成
+      const content = "テストデータSJIS";
+      send({ action:"create", path:"Jxb.004", content:content, encoding: USE_SJIS ? "sjis":"utf8" });
+
+      // ③ 読み取り（GetLinkFileData 相当）
+      setTimeout(() => send({ action:"read", path:"Jxb.004", encoding: USE_SJIS ? "sjis":"utf8" }), 500);
+
+      // ④ EXE 起動（ExecuteProc 相当）※ホワイトリスト登録がある場合のみ
+      // send({ action:"exec", path:"C:\\AdSeven\\Audatex\\Auda7\\Bin\\AudaMenu.exe" });
+    };
+    ws.onmessage = (ev) => log("[msg] " + ev.data);
+    ws.onerror   = (e)  => log("[err] " + e);
+    ws.onclose   = ()   => log("[close]");
+  }
+
+  connect();

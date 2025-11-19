@@ -32,17 +32,17 @@ namespace LocalFileAgent
         {
             ParseArgs(args);
 
-            var prefix = $"http://127.0.0.1:{Port}/ws/";
+            var prefix = "http://127.0.0.1:" + Port + "/ws/";
             var listener = new HttpListener();
             listener.Prefixes.Add(prefix);
 
             try
             {
                 listener.Start();
-                Console.WriteLine($"[LocalFileAgent] Listening {prefix}");
-                Console.WriteLine($"BaseDir={BaseDir}");
-                Console.WriteLine($"AllowedOrigins={string.Join(",", AllowedOrigins)}");
-                Console.WriteLine($"Token={(string.IsNullOrEmpty(ApiToken) ? "(none)" : "***")}");
+                Console.WriteLine("[LocalFileAgent] Listening " + prefix);
+                Console.WriteLine("BaseDir=" + BaseDir);
+                Console.WriteLine("AllowedOrigins=" + string.Join(",", AllowedOrigins));
+                Console.WriteLine("Token=" + (string.IsNullOrEmpty(ApiToken) ? "(none)" : "***"));
             }
             catch (HttpListenerException hlex)
             {
@@ -108,6 +108,10 @@ namespace LocalFileAgent
             var ws = wsCtx.WebSocket;
             var buffer = new ArraySegment<byte>(new byte[64 * 1024]);
 
+            // C# 5 制約：catch/finally で await できないため、ここでクローズ情報を保持し finally で同期クローズ
+            WebSocketCloseStatus closeStatus = WebSocketCloseStatus.NormalClosure;
+            string closeDesc = "bye";
+
             try
             {
                 while (ws.State == WebSocketState.Open)
@@ -115,7 +119,8 @@ namespace LocalFileAgent
                     var recv = await ws.ReceiveAsync(buffer, CancellationToken.None);
                     if (recv.MessageType == WebSocketMessageType.Close)
                     {
-                        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
+                        closeStatus = WebSocketCloseStatus.NormalClosure;
+                        closeDesc = "bye";
                         break;
                     }
 
@@ -128,10 +133,20 @@ namespace LocalFileAgent
             catch (Exception ex)
             {
                 Console.Error.WriteLine("[WS Error] " + ex);
-                try { await ws.CloseAsync(WebSocketCloseStatus.InternalServerError, "error", CancellationToken.None); } catch { }
+                closeStatus = WebSocketCloseStatus.InternalServerError;
+                closeDesc = "error";
             }
             finally
             {
+                try
+                {
+                    // await 不可なので同期的に Wait() でクローズ
+                    if (ws.State == WebSocketState.Open)
+                    {
+                        ws.CloseAsync(closeStatus, closeDesc, CancellationToken.None).Wait();
+                    }
+                }
+                catch { }
                 ws.Dispose();
             }
         }
@@ -163,7 +178,7 @@ namespace LocalFileAgent
                                 string pattern = Path.GetFileName(path) ?? "*";
                                 string ext = Path.GetExtension(pattern);
                                 if (!string.IsNullOrEmpty(ext) && !AllowedExtensions.Contains(ext))
-                                    return SimpleJson.Ok(false, $"disallowed extension: {ext}");
+                                    return SimpleJson.Ok(false, "disallowed extension: " + ext);
 
                                 foreach (var f in Directory.EnumerateFiles(BaseDir, pattern, SearchOption.TopDirectoryOnly))
                                 { File.Delete(f); count++; }
@@ -172,25 +187,25 @@ namespace LocalFileAgent
                             {
                                 string full = ResolveRestrictedPath(path);
                                 var ext = Path.GetExtension(full);
-                                if (!AllowedExtensions.Contains(ext)) return SimpleJson.Ok(false, $"disallowed extension: {ext}");
+                                if (!AllowedExtensions.Contains(ext)) return SimpleJson.Ok(false, "disallowed extension: " + ext);
                                 if (File.Exists(full)) { File.Delete(full); count = 1; }
                             }
-                            return SimpleJson.Ok(true, $"deleted {count} file(s)");
+                            return SimpleJson.Ok(true, "deleted " + count + " file(s)");
                         }
                     case "create":
                         {
                             string full = ResolveRestrictedPath(path);
                             var ext = Path.GetExtension(full);
-                            if (!AllowedExtensions.Contains(ext)) return SimpleJson.Ok(false, $"disallowed extension: {ext}");
+                            if (!AllowedExtensions.Contains(ext)) return SimpleJson.Ok(false, "disallowed extension: " + ext);
                             Directory.CreateDirectory(Path.GetDirectoryName(full));
                             File.WriteAllText(full, content ?? "", enc);
-                            return SimpleJson.Ok(true, $"created {full}");
+                            return SimpleJson.Ok(true, "created " + full);
                         }
                     case "read":
                         {
                             string full = ResolveRestrictedPath(path);
                             var ext = Path.GetExtension(full);
-                            if (!AllowedExtensions.Contains(ext)) return SimpleJson.Ok(false, $"disallowed extension: {ext}");
+                            if (!AllowedExtensions.Contains(ext)) return SimpleJson.Ok(false, "disallowed extension: " + ext);
                             if (!File.Exists(full)) return SimpleJson.Ok(false, "file not found");
                             var txt = File.ReadAllText(full, enc);
                             return SimpleJson.Ok(true, "read ok", txt);
@@ -201,7 +216,7 @@ namespace LocalFileAgent
                             string full = Path.IsPathRooted(path) ? Path.GetFullPath(path) : Path.GetFullPath(Path.Combine(BaseDir, path));
                             if (!AllowedExecs.Contains(full)) return SimpleJson.Ok(false, "exe not allowed");
                             var p = Process.Start(new ProcessStartInfo { FileName = full, UseShellExecute = false });
-                            return SimpleJson.Ok(true, $"started pid={p.Id}");
+                            return SimpleJson.Ok(true, "started pid=" + p.Id);
                         }
                     default:
                         return SimpleJson.Ok(false, "unknown action");
@@ -279,7 +294,7 @@ namespace LocalFileAgent
                 return new SimpleJson(dict);
             }
 
-            public string GetString(string key) => _kv.ContainsKey(key) ? _kv[key] : null;
+            public string GetString(string key) { return _kv.ContainsKey(key) ? _kv[key] : null; }
             public bool GetBool(string key)
             {
                 var v = GetString(key);
@@ -294,7 +309,7 @@ namespace LocalFileAgent
                 sb.Append("}");
                 return sb.ToString();
             }
-            static string Escape(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n");
+            static string Escape(string s) { return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n"); }
         }
     }
 }
