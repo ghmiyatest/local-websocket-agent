@@ -1,5 +1,5 @@
 param(
-  [string]$BaseDir = "C:\Adseven",
+  [string]$BaseDir = "C:\AgentTest",
   [int]$Port = 8787,
   [string]$Origins = "http://intranet.example.local",
   [string]$Token = "YOUR_SECRET"
